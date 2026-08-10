@@ -8,86 +8,112 @@ const app = express()
 app.use(cors())
 app.use(express.json())
 
-// .env fallback values
 const ENV_API_BASE = process.env.COZE_API_BASE || 'https://api.coze.cn'
 const ENV_API_TOKEN = process.env.COZE_API_TOKEN
 const ENV_BOT_ID = process.env.COZE_BOT_ID
 
-const SYSTEM_PROMPT = `你是 BOE（京东方）的成长智能体，帮助团队成员记录和总结工作。
+// ============================================================
+// Coze v3 API 异步流程：
+// 1. POST /v3/chat           → 返回 { id, conversation_id }
+// 2. GET  /v3/chat/retrieve  → 轮询直到 status=completed
+// 3. GET  /v3/chat/message/list → 获取 type=answer 的回复
+// ============================================================
 
-## 你的功能：
-1. **记录工作** - 当用户描述今天的工作时，提取关键信息并记录
-2. **日报总结** - 按日期生成当日工作总结，突出亮点
-3. **周报总结** - 汇总一周工作，分析时间分配和项目参与度
-4. **月报/季报/年报** - 生成长周期的结构化报告
+async function callCozeChat(apiBase, apiToken, botId, messages) {
+  const headers = {
+    'Authorization': `Bearer ${apiToken}`,
+    'Content-Type': 'application/json'
+  }
 
-## 工作记录格式：
-当用户描述工作时，请按以下格式整理并回复：
-- **日期**：自动提取或确认
-- **工作内容**：具体做了什么
-- **成果/亮点**：产出了什么
-- **所属项目**：归哪个项目
-- **工时**：预估花了多久
+  // Step 1: 发起对话
+  const chatRes = await fetch(`${apiBase}/v3/chat`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      bot_id: botId,
+      user_id: 'web-user-' + Date.now(),
+      stream: false,
+      auto_save_history: true,
+      additional_messages: messages.map(m => ({
+        role: m.role,
+        content: m.content,
+        content_type: 'text'
+      }))
+    })
+  })
 
-## 总结报告格式：
-- 使用清晰的标题和分点
-- 突出亮点和成长点
-- 给出简洁的评价和建议
+  const chatData = await chatRes.json()
+  console.log('[Coze] chat response:', JSON.stringify(chatData).slice(0, 500))
 
-## 注意：
-- 用中文回复
-- 语气专业但友好
-- 如果信息不完整，主动询问补充
-- 每次回复后提示用户可以继续记录或请求总结`
+  if (chatData.code !== 0) {
+    throw new Error(`Coze API error: ${chatData.msg || JSON.stringify(chatData)}`)
+  }
+
+  const conversationId = chatData.data?.conversation_id
+  const chatId = chatData.data?.id
+
+  if (!conversationId || !chatId) {
+    throw new Error('Missing conversation_id or id in response')
+  }
+
+  // Step 2: 轮询等待完成（最多 60 秒）
+  const retrieveUrl = `${apiBase}/v3/chat/retrieve?conversation_id=${conversationId}&chat_id=${chatId}`
+  let status = ''
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 2000))
+
+    const retrieveRes = await fetch(retrieveUrl, { headers })
+    const retrieveData = await retrieveRes.json()
+    status = retrieveData.data?.status || ''
+    console.log(`[Coze] poll #${i + 1}: status=${status}`)
+
+    if (status === 'completed' || status === 'failed') break
+  }
+
+  if (status !== 'completed') {
+    throw new Error(`Chat did not complete in time (status: ${status})`)
+  }
+
+  // Step 3: 获取消息列表
+  const msgUrl = `${apiBase}/v3/chat/message/list?conversation_id=${conversationId}&chat_id=${chatId}`
+  const msgRes = await fetch(msgUrl, { headers })
+  const msgData = await msgRes.json()
+  console.log('[Coze] messages:', JSON.stringify(msgData).slice(0, 800))
+
+  if (msgData.code !== 0) {
+    throw new Error(`Failed to get messages: ${msgData.msg}`)
+  }
+
+  // 找到 type=answer 的 assistant 消息
+  const messages2 = msgData.data || []
+  const answerMsg = messages2.find(m => m.type === 'answer' && m.role === 'assistant')
+  return answerMsg?.content || '收到，请继续描述你的工作内容。'
+}
 
 app.post('/api/chat', async (req, res) => {
   const { messages, apiConfig = {} } = req.body
 
-  // Merge: frontend apiConfig (localStorage) overrides .env
   const apiBase = apiConfig.apiBase || ENV_API_BASE
   const apiToken = apiConfig.apiToken || ENV_API_TOKEN
   const botId = apiConfig.botId || ENV_BOT_ID
 
+  // 无 API 配置 → Demo 模式
   if (!apiToken || !botId) {
     const lastMsg = messages[messages.length - 1]?.content || ''
-    const reply = generateDemoReply(lastMsg, messages)
+    const reply = generateDemoReply(lastMsg)
     return res.json({ reply, mode: 'demo' })
   }
 
   try {
-    const response = await fetch(`${apiBase}/v3/chat`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        bot_id: botId,
-        user_id: 'web-user',
-        stream: false,
-        auto_save_history: true,
-        additional_messages: messages.map(m => ({
-          role: m.role,
-          content: m.content,
-          content_type: 'text'
-        }))
-      })
-    })
-
-    const data = await response.json()
-
-    if (data.code !== 0) {
-      console.error('Coze API error:', data)
-      return res.json({ reply: `Coze API 错误: ${data.msg || '未知错误，请检查 API 配置'}` })
-    }
-
-    const replyMsg = data.data?.messages?.find(m => m.role === 'assistant' && m.type === 'answer')
-    const reply = replyMsg?.content || '收到，请继续描述你的工作内容。'
-
+    console.log(`[Coze] calling with bot_id=${botId}, messages=${messages.length}`)
+    const reply = await callCozeChat(apiBase, apiToken, botId, messages)
     res.json({ reply, mode: 'coze' })
   } catch (err) {
-    console.error('Request failed:', err)
-    res.status(500).json({ error: '服务暂时不可用，请检查 API 地址是否正确' })
+    console.error('[Coze] error:', err.message)
+    res.json({
+      reply: `调用 Coze API 出错：${err.message}\n\n请检查：\n1. API Token 是否正确\n2. Bot ID 是否正确\n3. 智能体是否已发布`,
+      mode: 'error'
+    })
   }
 })
 
