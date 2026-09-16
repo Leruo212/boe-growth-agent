@@ -9,6 +9,18 @@
 - **亮点识别** — 自动标记工作中的成长点与核心成果
 - **网页端配置** — 在 UI 内直接填入 Coze API 地址与密钥，无需改代码
 
+## 界面
+
+左侧是数据看板（缺陷率 / 今日检测 / 异常线别 / KPI 达成 / 不良类型分布 / 各线别良率），右侧是对话区：
+
+![数据看板 + 对话界面](assets/boe-dashboard.png)
+
+随手说一句今天做了什么，自动整理成带日期、内容、亮点的结构化条目：
+
+![工作记录录入](assets/boe-chat.png)
+
+> 截图取自未配置 Coze API 时的 **Demo 模式**（由本地模拟逻辑响应），用于展示 UI 与交互流程。
+
 ## 快速开始
 
 ### 环境要求
@@ -82,6 +94,7 @@ boe-growth-agent/
 │   ├── App.jsx
 │   ├── main.jsx
 │   └── index.css
+├── assets/                    # README 用的界面截图
 ├── .env                       # 环境变量配置
 ├── vite.config.js
 └── package.json
