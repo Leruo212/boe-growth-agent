@@ -1,5 +1,7 @@
 # BOE 成长智能体
 
+<p align="right"><a href="README.en.md"><img src="https://img.shields.io/badge/English-SWITCH-1F4E79?style=flat-square" alt="Read in English"></a></p>
+
 > 京东方团队工作记录与成长追踪 AI 助手，基于 Coze API 构建。
 
 ## 功能
