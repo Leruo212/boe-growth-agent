@@ -1,72 +1,64 @@
-<h1 align="center">BOE Growth Agent</h1>
+# BOE Growth Agent
 
-<p align="center">
-  <a href="README.md"><img src="https://img.shields.io/badge/%E4%B8%AD%E6%96%87-SWITCH-4E9A06?style=flat-square" alt="Switch to Chinese"></a>
-  &nbsp;
-  <img src="https://img.shields.io/badge/English-CURRENT-1F4E79?style=flat-square" alt="English">
-</p>
+A conversational prototype for work notes and summaries, built with React, Express and the Coze API.
 
-<p align="center">
-  Say what you did today. It becomes a structured report at the interval you actually need to hand in.
-</p>
+[中文](README.md)
 
-## What it does
+Enter work items or request daily, weekly, monthly, quarterly and yearly summaries using the shortcuts. Without Coze credentials, the backend returns local demo replies so you can preview the interaction.
 
-Weekly reporting fails for a boring reason: by Friday nobody remembers what happened on Tuesday. This application takes the opposite approach. You talk to it as things happen, in whatever language you would use with a colleague, and it accumulates those fragments into structured summaries at five granularities:
+![Work-log prototype with a sample dashboard and chat panel](assets/boe-dashboard.png)
 
-- daily
-- weekly
-- monthly
-- quarterly
-- yearly
+## Current Status
 
-Each level is generated from the same underlying record, so the weekly report and the quarterly report cannot contradict each other.
+This is a personal prototype, not an official BOE product. The dashboard uses sample data and is not connected to production systems. Chat messages live in page memory and reset on refresh. A work-log database, cross-session retrieval and report statistics are not implemented. Record counts, hours and “saved” messages in demo replies are illustrative text.
 
-## Stack
+With Coze connected, replies depend on the bot you configure. The application itself does not guarantee consistent reports across periods or persistent work-log storage.
 
-| Layer | Technology |
-|---|---|
-| Frontend | React 19 + Vite + Tailwind CSS 4 |
-| Backend | Express 5 (Node.js) |
-| AI | Coze Open API v3 |
-| Icons | Lucide React |
+![Work-item input and a demo reply](assets/boe-chat.png)
 
-Front end and back end are separate processes in development and can be deployed independently.
+## Run Locally
 
-## Quick start
+Requires Node.js **20.19+ or 22.12+**, as required by the current Vite dependencies, and npm.
 
 ```bash
-# 1. Install dependencies
 npm install
-
-# 2. Start both front and back end
-npm run dev
+npm run start
 ```
 
-### Configuring the Coze API
+Open <http://localhost:5173>. The `start` script launches both Vite and the Express backend, which defaults to port `3001`. Running `npm run dev` alone starts only the frontend.
 
-The application reads its credentials from environment variables. Without them it still runs: the summarisation falls back to a local template path, so the interface and the record-keeping work, and only the language generation is degraded.
+## Connect Coze
 
-To connect the real model, create a Coze bot, obtain the bot ID and an access token, and place them in the environment file. The repository's configuration section documents the exact variable names.
+Enter the API base URL, token and bot ID in the settings dialog, or create a `.env` file in the project root:
 
-## When no API is configured
-
-The local fallback groups entries by date and emits a fixed template. This is intentional: a reporting tool that refuses to start because a key is missing is worse than one that produces plain output.
-
-## Project structure
-
-```
-client/          React 19 front end
-server/          Express 5 API, Coze client, prompt assembly
-shared/          types shared across the two sides
+```env
+COZE_API_BASE=https://api.coze.cn
+COZE_API_TOKEN=your_api_token_here
+COZE_BOT_ID=your_bot_id_here
 ```
 
-## Design notes
+Non-empty values from the settings dialog override environment variables. A missing token or bot ID selects demo mode. Failed requests with configured credentials return an error message.
 
-**Why five granularities instead of one.** A weekly summary and a quarterly summary answer different questions. Generating them from a shared store, rather than asking the model five times, keeps them consistent and makes each one cheaper to produce.
+Settings are stored in browser `localStorage`. When sending a message, the frontend sends the settings and current conversation to this project's Express backend, which then calls the configured Coze endpoint.
 
-**Why a fallback path.** The tool's core value is the record, not the prose. Separating the two means the record survives an API outage.
+## Project Structure
+
+```text
+src/
+  App.jsx                   Conversation state and requests
+  components/               Header, dashboard, chat and settings
+server/index.js             Coze v3 calls and local demo replies
+assets/                     README screenshots
+vite.config.js              Frontend configuration and /api proxy
+```
+
+The frontend uses React 19, Vite, Tailwind CSS 4 and Lucide React. The backend uses Express 5.
+
+```bash
+npm run build
+npm run lint
+```
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+The project is documented as MIT, but the repository does not yet include a standalone LICENSE file.
